@@ -1,0 +1,19 @@
+# Ignore Mac/Linux system files
+.DS_Store
+*.swp
+
+# Ignore documentation builds
+docs/build/
+
+# Ignore local output directories
+results/
+tmp/
+logs/
+qc/
+alignments/
+peaks/
+tracks/
+
+# Ignore IDEA/VSCode settings
+.idea/
+.vscode/

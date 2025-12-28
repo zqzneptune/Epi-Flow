@@ -1,0 +1,16 @@
+name: epiflow
+channels:
+  - bioconda
+  - conda-forge
+  - defaults
+dependencies:
+  - fastqc
+  - cutadapt
+  - bowtie2
+  - samtools
+  - picard
+  - bedtools
+  - macs3
+  - deeptools
+  - multiqc
+  - seacr
