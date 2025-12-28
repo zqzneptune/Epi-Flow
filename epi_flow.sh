@@ -2,21 +2,27 @@
 set -euo pipefail
 trap 'log_error "Pipeline failed at line $LINENO"; exit 1' ERR
 
-#######################################
-# EPI-FLOW: Unified Chromatin Pipeline
-# Refactored for robustness and consistency
-#######################################
 
-# --- ANSI Colors ---
-readonly RED='\033[0;31m'
-readonly GREEN='\033[0;32m'
-readonly YELLOW='\033[1;33m'
-readonly BLUE='\033[0;34m'
-readonly CYAN='\033[0;36m'
-readonly MAGENTA='\033[0;35m'
-readonly NC='\033[0m'
+if [[ -t 1 ]] && command -v tput &>/dev/null && [[ $(tput colors 2>/dev/null) -ge 8 ]]; then
+    readonly RED='\033[0;31m'
+    readonly GREEN='\033[0;32m'
+    readonly YELLOW='\033[1;33m'
+    readonly BLUE='\033[0;34m'
+    readonly CYAN='\033[0;36m'
+    readonly MAGENTA='\033[0;35m'
+    readonly NC='\033[0m'
+else
+    # No color support
+    readonly RED=''
+    readonly GREEN=''
+    readonly YELLOW=''
+    readonly BLUE=''
+    readonly CYAN=''
+    readonly MAGENTA=''
+    readonly NC=''
+fi
 
-# --- DEFAULTS ---
+
 THREADS=8
 MEM_GB=""
 CLEAN_INTERMEDIATE=true
@@ -25,7 +31,7 @@ EFFECTIVE_GENOME_SIZE=""
 PEAK_MODE="narrow"
 ASSAY_TYPE=""
 
-# --- LOGGING SYSTEM ---
+
 PIPELINE_START_TIME=$(date +%s)
 
 log_header() {
@@ -56,7 +62,6 @@ log_metric() {
 
 log_qc() {
     echo "$1,$2" >> "${SUMMARY_QC}"
-    # log_metric "$1" "$2"
 }
 
 log_progress() {
@@ -113,38 +118,36 @@ format_percentage() {
     awk "BEGIN {printf \"%.2f%%\", $1}"
 }
 
-# --- USAGE ---
+
 usage() {
-    cat << EOF
-${BLUE}═══════════════════════════════════════════════════════════════
-  EPI-FLOW: Unified Chromatin Analysis Pipeline
-═══════════════════════════════════════════════════════════════${NC}
-
-${GREEN}Required Arguments:${NC}
-  -a  Assay type [atac | cutrun | cuttag | chip]
-  -1  R1 fastq.gz (comma-separated for multiple files)
-  -n  Sample name
-  -x  Bowtie2 index prefix
-  -o  Output directory
-  -g  Effective genome size (hs, mm, or integer)
-
-${GREEN}Optional Arguments:${NC}
-  -2  R2 fastq.gz (comma-separated, required for ATAC/CUT&RUN/CUT&Tag)
-  -p  Peak mode [narrow | broad] (default: narrow)
-  -b  Blacklist BED file
-  -t  Number of threads (default: 8)
-  -m  Memory in GB (auto-detected if not specified)
-  --keep-tmp  Keep intermediate files
-
-${GREEN}Example:${NC}
-  $0 -a atac -1 sample_R1.fastq.gz -2 sample_R2.fastq.gz \\
-     -n MySample -x /ref/hg38 -o ./output -g hs
-
-EOF
+    echo -e "${BLUE}═══════════════════════════════════════════════════════════════${NC}"
+    echo -e "${BLUE}  EPI-FLOW: Unified Chromatin Analysis Pipeline${NC}"
+    echo -e "${BLUE}═══════════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "${GREEN}Required Arguments:${NC}"
+    echo "  -a  Assay type [atac | cutrun | cuttag | chip]"
+    echo "  -1  R1 fastq.gz (comma-separated for multiple files)"
+    echo "  -n  Sample name"
+    echo "  -x  Bowtie2 index prefix"
+    echo "  -o  Output directory"
+    echo "  -g  Effective genome size (hs, mm, or integer)"
+    echo ""
+    echo -e "${GREEN}Optional Arguments:${NC}"
+    echo "  -2  R2 fastq.gz (comma-separated, required for ATAC/CUT&RUN/CUT&Tag)"
+    echo "  -p  Peak mode [narrow | broad] (default: narrow)"
+    echo "  -b  Blacklist BED file"
+    echo "  -t  Number of threads (default: 8)"
+    echo "  -m  Memory in GB (auto-detected if not specified)"
+    echo "  --keep-tmp  Keep intermediate files"
+    echo ""
+    echo -e "${GREEN}Example:${NC}"
+    echo "  $(basename "$0") -a atac -1 sample_R1.fastq.gz -2 sample_R2.fastq.gz \\"
+    echo "     -n MySample -x /ref/hg38 -o ./output -g hs"
+    echo ""
     exit 1
 }
 
-# --- PARSE ARGUMENTS ---
+
 R1_INPUT=""
 R2_INPUT=""
 SAMPLE=""
@@ -171,7 +174,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# --- VALIDATION ---
+
 log_header "VALIDATION & SETUP"
 
 if [[ -z "${R1_INPUT}" || -z "${SAMPLE}" || -z "${BOWTIE2_INDEX}" || -z "${OUTDIR}" || -z "${EFFECTIVE_GENOME_SIZE}" || -z "${ASSAY_TYPE}" ]]; then
@@ -179,21 +182,21 @@ if [[ -z "${R1_INPUT}" || -z "${SAMPLE}" || -z "${BOWTIE2_INDEX}" || -z "${OUTDI
     usage
 fi
 
-# Validate assay type
+
 if [[ ! "$ASSAY_TYPE" =~ ^(atac|cutrun|cuttag|chip)$ ]]; then
     fail "Invalid assay type: $ASSAY_TYPE. Valid options: atac, cutrun, cuttag, chip"
 fi
 
-# Detect paired-end
+
 IS_PE=false
 [[ -n "${R2_INPUT}" ]] && IS_PE=true
 
-# Assay-specific validation
+
 if [[ "$ASSAY_TYPE" =~ ^(atac|cutrun|cuttag)$ ]] && [[ "$IS_PE" == "false" ]]; then
     fail "Assay '$ASSAY_TYPE' requires paired-end reads (R2 not provided)"
 fi
 
-# Validate peak mode
+
 if [[ ! "$PEAK_MODE" =~ ^(narrow|broad)$ ]]; then
     fail "Invalid peak mode: $PEAK_MODE. Valid options: narrow, broad"
 fi
@@ -203,7 +206,7 @@ log_info "Read type: $([ "$IS_PE" == "true" ] && echo "Paired-End" || echo "Sing
 log_info "Peak mode: ${PEAK_MODE}"
 log_info "Sample: ${SAMPLE}"
 
-# --- DEPENDENCY CHECK ---
+
 log_step "Checking dependencies"
 
 REQUIRED_TOOLS="fastqc cutadapt bowtie2 samtools picard bedtools macs3"
@@ -221,7 +224,7 @@ for tool in $REQUIRED_TOOLS; do
     log_progress "Found: $tool"
 done
 
-# --- RESOURCE SETUP ---
+
 log_step "Configuring resources"
 
 MAX_THREADS=$(nproc)
@@ -246,29 +249,27 @@ log_info "Threads: ${THREADS} / ${MAX_THREADS}"
 log_info "Memory: ${MEM_GB}GB total"
 log_info "Java heap: $((JAVA_MAX / 1024 / 1024 / 1024))GB"
 
-# --- DIRECTORIES ---
+
 log_step "Creating directory structure"
 
-# Core directories
+
 LOGDIR="${OUTDIR}/logs"
 QCDIR="${OUTDIR}/qc"
 ALIGNDIR="${OUTDIR}/alignments"
 PEAKDIR="${OUTDIR}/peaks"
 TRACKDIR="${OUTDIR}/tracks"
 
-# Working directory - uses system TMPDIR or creates local tmp
+
 if [[ -n "${TMPDIR:-}" ]] && [[ -d "${TMPDIR}" ]] && [[ -w "${TMPDIR}" ]]; then
-    # Use system temp if available (e.g., /tmp, /scratch)
     WORKDIR="${TMPDIR}/${SAMPLE}_$"
     log_info "Using system temporary directory: ${TMPDIR}"
 else
-    # Fall back to output directory
     WORKDIR="${OUTDIR}/tmp"
     log_info "Using local temporary directory"
 fi
 
 mkdir -p "${LOGDIR}" "${QCDIR}" "${ALIGNDIR}" "${PEAKDIR}" "${TRACKDIR}" "${WORKDIR}"
-export TMPDIR="${WORKDIR}"  # Set for Java tools
+export TMPDIR="${WORKDIR}"
 
 SUMMARY_QC="${QCDIR}/${SAMPLE}_summary_qc.csv"
 echo "metric,value" > "$SUMMARY_QC"
@@ -278,7 +279,7 @@ log_progress "Working: ${WORKDIR}"
 log_progress "Logs: ${LOGDIR}"
 log_progress "QC: ${QCDIR}"
 
-# --- INPUT VALIDATION ---
+
 log_step "Validating input files"
 
 IFS=',' read -r -a R1_FILES <<< "${R1_INPUT}"
@@ -296,21 +297,18 @@ if [[ "$IS_PE" == "true" ]]; then
     done
 fi
 
-# Validate Bowtie2 index
+
 if [[ ! -f "${BOWTIE2_INDEX}.1.bt2" && ! -f "${BOWTIE2_INDEX}.1.bt2l" ]]; then
     fail "Bowtie2 index not found: ${BOWTIE2_INDEX}"
 fi
 log_progress "Bowtie2 index: ${BOWTIE2_INDEX}"
 
-# Validate blacklist if provided
+
 if [[ -n "${BLACKLIST}" ]]; then
     check_file "${BLACKLIST}"
     log_progress "Blacklist: ${BLACKLIST}"
 fi
 
-#######################################
-# PIPELINE STEPS
-#######################################
 
 step_prepare() {
     log_header "STEP 1: PRE-QC AND MERGING"
@@ -432,11 +430,11 @@ step_align() {
     samtools idxstats -@ "${THREADS}" "${SORTED_BAM}" > "${LOGDIR}/${SAMPLE}_raw_idxstats.txt"
     log_progress "Statistics generated"
     
-    # Extract key metrics (initialize with defaults first)
-    local total_reads=0
-    local mapped_reads=0
+
+    local RAW_TOTAL_READS=0
+    local RAW_MAP_READS=0
     
-    total_reads=$(awk '
+    RAW_TOTAL_READS=$(awk '
         # Match lines that begin with SN (allow tabs/spaces) and contain the tag
         /^SN([[:space:]]|$)/ && /raw total sequences:/ {
         # Find the first numeric span; match works in POSIX awk
@@ -452,18 +450,18 @@ step_align() {
         }
     ' "${LOGDIR}/${SAMPLE}_raw_samstats.txt" 2>/dev/null || echo "0")
 
-    mapped_reads=$(awk '/^SN.*reads mapped:/ {print $NF}' "${LOGDIR}/${SAMPLE}_raw_samstats.txt" 2>/dev/null || echo "0")
+    RAW_MAP_READS=$(awk '/^SN.*reads mapped:/ {print $NF}' "${LOGDIR}/${SAMPLE}_raw_samstats.txt" 2>/dev/null || echo "0")
     
     # Ensure numeric values
-    total_reads=${total_reads:-0}
-    mapped_reads=${mapped_reads:-0}
+    RAW_TOTAL_READS=${RAW_TOTAL_READS:-0}
+    RAW_MAP_READS=${RAW_MAP_READS:-0}
     
-    if [[ "$total_reads" -gt 0 ]] && [[ "$mapped_reads" -gt 0 ]]; then
-        local pct_mapped=$(awk "BEGIN {printf \"%.2f\", ($mapped_reads/$total_reads)*100}")
-        log_metric "Total reads" "$(format_reads "$total_reads")"
-        log_metric "Mapped reads" "$(format_reads "$mapped_reads") (${pct_mapped}%)"
-        log_qc "Total_Reads_Raw" "$total_reads"
-        log_qc "Mapped_Reads_Raw" "$mapped_reads"
+    if [[ "$RAW_TOTAL_READS" -gt 0 ]] && [[ "$RAW_MAP_READS" -gt 0 ]]; then
+        local RAW_PCT_MAP=$(awk "BEGIN {printf \"%.2f\", ($RAW_MAP_READS/$RAW_TOTAL_READS)*100}")
+        log_metric "Total reads" "$(format_reads "$RAW_TOTAL_READS")"
+        log_metric "Mapped reads" "$(format_reads "$RAW_MAP_READS") (${RAW_PCT_MAP}%)"
+        log_qc "Total_Reads_Raw" "$RAW_TOTAL_READS"
+        log_qc "Mapped_Reads_Raw" "$RAW_MAP_READS"
     else
         log_warn "Unable to extract read counts from alignment statistics"
     fi
@@ -496,7 +494,7 @@ step_mark_dups() {
     samtools index -@ "${THREADS}" "${MARKED_BAM}" || fail "BAM indexing failed"
     log_progress "Index created"
     
-    # Extract duplication rate (skip header, get data row)
+    
     local dup_rate=$(awk -F'\t' 'BEGIN{col=0} $1=="LIBRARY"{for(i=1;i<=NF;i++) if($i=="PERCENT_DUPLICATION") col=i; next} /^#/ {next} col{print $col; exit}' "${METRICS}")
     if [[ -n "$dup_rate" ]] && [[ "$dup_rate" != "PERCENT_DUPLICATION" ]]; then
         local dup_pct=$(awk "BEGIN {printf \"%.2f%%\", $dup_rate * 100}")
@@ -606,7 +604,7 @@ step_filter() {
     samtools index -@ "${THREADS}" "${CLEAN_BAM}" || fail "BAM indexing failed"
     log_progress "Index created"
     
-    # Calculate filtering statistics
+    
     local TOTAL_READS=$(samtools view -c -@ "${THREADS}" "${MARKED_BAM}")
     local FILTERED_READS=$(samtools view -c -@ "${THREADS}" "${CLEAN_BAM}")
     local REMOVED_READS=$((TOTAL_READS - FILTERED_READS))
@@ -692,11 +690,11 @@ step_peaks_seacr() {
     log_info "Generating bedgraph for SEACR"
     
     log_info "Converting BAM to BED fragments"
-    # Sort by name first to ensure proper pairs are adjacent
+    
     samtools sort -n -@ "${THREADS}" -o "${WORKDIR}/${SAMPLE}.namesorted.bam" "${CLEAN_BAM}" \
         2>> "${LOGDIR}/seacr.log" || fail "Name sorting failed"
     
-    # Now convert to bedpe (suppress warnings to stderr, keep only errors in log)
+    
     bedtools bamtobed -bedpe -i "${WORKDIR}/${SAMPLE}.namesorted.bam" 2>&1 \
     | grep -v "WARNING: Query.*is marked as paired" \
     | awk '$1==$4 && $6-$2 < 1000 {print $0}' \
@@ -704,7 +702,7 @@ step_peaks_seacr() {
     | sort -k1,1 -k2,2n -k3,3n > "${WORKDIR}/${SAMPLE}.fragments.bed" \
         2>> "${LOGDIR}/seacr.log" || fail "Fragment generation failed"
     
-    # Clean up name-sorted BAM
+    
     rm -f "${WORKDIR}/${SAMPLE}.namesorted.bam"
     log_progress "Fragments generated"
     
@@ -771,7 +769,7 @@ step_frip() {
         log_metric "FRiP (${label})" "${FRIP} (${FRIP_PCT})"
         log_qc "FRiP_${label}" "${FRIP}"
         
-        # Quality assessment
+        
         local quality="POOR"
         if (( $(awk "BEGIN {print ($FRIP >= 0.3)}") )); then
             quality="GOOD"
@@ -804,7 +802,7 @@ step_insert_size() {
     
     log_progress "Insert size metrics generated"
     
-    # Extract median insert size (skip header lines, get first data row)
+    
     local median_insert=$(awk 'NR>7 && NF>0 && $1 ~ /^[0-9]+$/ {print $1; exit}' "${QCDIR}/${SAMPLE}_insert_size.txt")
     if [[ -n "$median_insert" ]] && [[ "$median_insert" =~ ^[0-9]+$ ]]; then
         log_metric "Median insert size" "${median_insert}bp"
@@ -916,9 +914,6 @@ step_cleanup() {
     log_progress "Freed ${tmp_size} of disk space"
 }
 
-#######################################
-# MAIN EXECUTION
-#######################################
 
 log_header "EPI-FLOW PIPELINE START"
 log_info "Sample: ${SAMPLE}"
@@ -926,30 +921,30 @@ log_info "Assay: ${ASSAY_TYPE^^}"
 log_info "Mode: $([ "$IS_PE" == "true" ] && echo "Paired-End" || echo "Single-End")"
 echo
 
-# Core steps
+
 step_prepare
 step_trim
 step_align
 step_mark_dups
 
-# Complexity analysis for ATAC-seq
+
 if [[ "$ASSAY_TYPE" == "atac" ]]; then
     step_complexity
 fi
 
 step_filter
 
-# Peak calling
+
 step_peaks_macs
 
-# FRiP for MACS peaks
+
 if [[ "$PEAK_MODE" == "broad" ]]; then
     step_frip "${PEAKDIR}/${SAMPLE}.final.broadPeak" "MACS3_Broad"
 else
     step_frip "${PEAKDIR}/${SAMPLE}.final.narrowPeak" "MACS3_Narrow"
 fi
 
-# Additional peak calling for CUT&RUN/Tag
+
 if [[ "$ASSAY_TYPE" =~ ^(cutrun|cuttag)$ ]]; then
     step_peaks_seacr
     if [[ -f "${PEAKDIR}/${SAMPLE}_SEACR.stringent.bed" ]]; then
@@ -957,21 +952,18 @@ if [[ "$ASSAY_TYPE" =~ ^(cutrun|cuttag)$ ]]; then
     fi
 fi
 
-# Insert size analysis
+
 step_insert_size
 
-# DeepTools visualization
+
 step_post_deeptools
 
-# Final QC report
+
 step_multiqc
 
-# Cleanup
+
 step_cleanup
 
-#######################################
-# PIPELINE COMPLETE
-#######################################
 
 log_header "PIPELINE COMPLETE"
 log_info "Sample: ${SAMPLE}"
