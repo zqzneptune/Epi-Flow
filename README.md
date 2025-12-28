@@ -1,6 +1,6 @@
-# EPI-FLOW: Unified Chromatin Analysis Pipeline
+# Epi-Flow: Unified Chromatin Analysis Pipeline
 
-**EPI-FLOW** is a robust, automated Bash pipeline designed for the processing of chromatin profiling NGS data. It unifies preprocessing, alignment, filtering, quality control, and peak calling into a single execution stream.
+**Epi-Flow** is a robust, automated Bash pipeline designed for the processing of chromatin profiling NGS data. It unifies preprocessing, alignment, filtering, quality control, and peak calling into a single execution stream.
 
 ## Supported Assays
 
@@ -19,7 +19,7 @@ The pipeline dynamically adjusts parameters (alignment scoring, insert size hand
 
 ### Conda / Mamba (Recommended)
 
-To run the EPI-FLOW pipeline, you need a specific set of bioinformatics tools. We recommend using **Mamba** (a faster replacement for Conda) to manage these dependencies in an isolated environment.
+To run the Epi-Flow pipeline, you need a specific set of bioinformatics tools. We recommend using **Mamba** (a faster replacement for Conda) to manage these dependencies in an isolated environment.
 
 1.  **Create the environment**
     Run the following command to create an environment named `epiflow` with all required tools:
