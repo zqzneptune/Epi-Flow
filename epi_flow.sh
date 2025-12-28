@@ -56,7 +56,7 @@ log_metric() {
 
 log_qc() {
     echo "$1,$2" >> "${SUMMARY_QC}"
-    log_metric "$1" "$2"
+    # log_metric "$1" "$2"
 }
 
 log_progress() {
@@ -249,19 +249,32 @@ log_info "Java heap: $((JAVA_MAX / 1024 / 1024 / 1024))GB"
 # --- DIRECTORIES ---
 log_step "Creating directory structure"
 
+# Core directories
 LOGDIR="${OUTDIR}/logs"
 QCDIR="${OUTDIR}/qc"
-FINALDIR="${OUTDIR}/final"
-TMPDIR="${OUTDIR}/tmp"
-PEAKDIR="${FINALDIR}/peaks"
+ALIGNDIR="${OUTDIR}/alignments"
+PEAKDIR="${OUTDIR}/peaks"
+TRACKDIR="${OUTDIR}/tracks"
 
-mkdir -p "${LOGDIR}" "${QCDIR}" "${FINALDIR}" "${TMPDIR}" "${PEAKDIR}"
-export TMPDIR
+# Working directory - uses system TMPDIR or creates local tmp
+if [[ -n "${TMPDIR:-}" ]] && [[ -d "${TMPDIR}" ]] && [[ -w "${TMPDIR}" ]]; then
+    # Use system temp if available (e.g., /tmp, /scratch)
+    WORKDIR="${TMPDIR}/${SAMPLE}_$"
+    log_info "Using system temporary directory: ${TMPDIR}"
+else
+    # Fall back to output directory
+    WORKDIR="${OUTDIR}/tmp"
+    log_info "Using local temporary directory"
+fi
+
+mkdir -p "${LOGDIR}" "${QCDIR}" "${ALIGNDIR}" "${PEAKDIR}" "${TRACKDIR}" "${WORKDIR}"
+export TMPDIR="${WORKDIR}"  # Set for Java tools
 
 SUMMARY_QC="${QCDIR}/${SAMPLE}_summary_qc.csv"
 echo "metric,value" > "$SUMMARY_QC"
 
 log_progress "Output: ${OUTDIR}"
+log_progress "Working: ${WORKDIR}"
 log_progress "Logs: ${LOGDIR}"
 log_progress "QC: ${QCDIR}"
 
@@ -311,13 +324,13 @@ step_prepare() {
     log_progress "FastQC completed"
     
     log_info "Merging R1 files"
-    MERGED_R1="${TMPDIR}/${SAMPLE}_R1.fastq.gz"
+    MERGED_R1="${WORKDIR}/${SAMPLE}_R1.fastq.gz"
     cat "${R1_FILES[@]}" > "${MERGED_R1}" || fail "R1 merge failed"
     log_progress "R1 merged: $(basename "$MERGED_R1")"
     
     if [[ "$IS_PE" == "true" ]]; then
         log_info "Merging R2 files"
-        MERGED_R2="${TMPDIR}/${SAMPLE}_R2.fastq.gz"
+        MERGED_R2="${WORKDIR}/${SAMPLE}_R2.fastq.gz"
         cat "${R2_FILES[@]}" > "${MERGED_R2}" || fail "R2 merge failed"
         log_progress "R2 merged: $(basename "$MERGED_R2")"
     fi
@@ -326,13 +339,13 @@ step_prepare() {
 step_trim() {
     log_header "STEP 2: ADAPTER TRIMMING"
     
-    TRIM_R1="${TMPDIR}/${SAMPLE}_R1.trim.fastq.gz"
+    TRIM_R1="${WORKDIR}/${SAMPLE}_R1.trim.fastq.gz"
     
     log_info "Adapter sequence: ${ADAPTER_SEQ}"
     log_info "Quality cutoff: Q20, minimum length: 20bp"
     
     if [[ "$IS_PE" == "true" ]]; then
-        TRIM_R2="${TMPDIR}/${SAMPLE}_R2.trim.fastq.gz"
+        TRIM_R2="${WORKDIR}/${SAMPLE}_R2.trim.fastq.gz"
         log_info "Running cutadapt (paired-end mode)"
         cutadapt -a "${ADAPTER_SEQ}" -A "${ADAPTER_SEQ}" \
             -q 20 -m 20 -j "${THREADS}" \
@@ -361,7 +374,7 @@ step_trim() {
 step_align() {
     log_header "STEP 3: ALIGNMENT"
     
-    SORTED_BAM="${TMPDIR}/${SAMPLE}.sorted.bam"
+    SORTED_BAM="${WORKDIR}/${SAMPLE}.sorted.bam"
     
     # Configure alignment parameters based on assay
     local BT2_ARGS=""
@@ -419,21 +432,47 @@ step_align() {
     samtools idxstats -@ "${THREADS}" "${SORTED_BAM}" > "${LOGDIR}/${SAMPLE}_raw_idxstats.txt"
     log_progress "Statistics generated"
     
-    # Extract key metrics
-    local total_reads=$(grep "^SN.*raw total sequences:" "${LOGDIR}/${SAMPLE}_raw_samstats.txt" | awk '{print $NF}')
-    local mapped_reads=$(grep "^SN.*reads mapped:" "${LOGDIR}/${SAMPLE}_raw_samstats.txt" | awk '{print $NF}')
+    # Extract key metrics (initialize with defaults first)
+    local total_reads=0
+    local mapped_reads=0
     
-    if [[ -n "$total_reads" && -n "$mapped_reads" ]]; then
+    total_reads=$(awk '
+        # Match lines that begin with SN (allow tabs/spaces) and contain the tag
+        /^SN([[:space:]]|$)/ && /raw total sequences:/ {
+        # Find the first numeric span; match works in POSIX awk
+        if (match($0, /[0-9][0-9,]*/)) {
+            v = substr($0, RSTART, RLENGTH)
+            gsub(",", "", v)        # remove thousands separators
+            last = v                # keep last match if multiple lines exist
+        }
+        }
+        END {
+        if (last == "" || last !~ /^[0-9]+$/) last = 0
+        print last
+        }
+    ' "${LOGDIR}/${SAMPLE}_raw_samstats.txt" 2>/dev/null || echo "0")
+
+    mapped_reads=$(awk '/^SN.*reads mapped:/ {print $NF}' "${LOGDIR}/${SAMPLE}_raw_samstats.txt" 2>/dev/null || echo "0")
+    
+    # Ensure numeric values
+    total_reads=${total_reads:-0}
+    mapped_reads=${mapped_reads:-0}
+    
+    if [[ "$total_reads" -gt 0 ]] && [[ "$mapped_reads" -gt 0 ]]; then
         local pct_mapped=$(awk "BEGIN {printf \"%.2f\", ($mapped_reads/$total_reads)*100}")
         log_metric "Total reads" "$(format_reads "$total_reads")"
         log_metric "Mapped reads" "$(format_reads "$mapped_reads") (${pct_mapped}%)"
+        log_qc "Total_Reads_Raw" "$total_reads"
+        log_qc "Mapped_Reads_Raw" "$mapped_reads"
+    else
+        log_warn "Unable to extract read counts from alignment statistics"
     fi
 }
 
 step_mark_dups() {
     log_header "STEP 4: DUPLICATE MARKING"
     
-    MARKED_BAM="${TMPDIR}/${SAMPLE}.marked.bam"
+    MARKED_BAM="${WORKDIR}/${SAMPLE}.marked.bam"
     METRICS="${QCDIR}/${SAMPLE}.dup_metrics.txt"
     
     log_info "Running Picard MarkDuplicates"
@@ -457,12 +496,14 @@ step_mark_dups() {
     samtools index -@ "${THREADS}" "${MARKED_BAM}" || fail "BAM indexing failed"
     log_progress "Index created"
     
-    # Extract duplication rate
-    local dup_rate=$(grep "PERCENT_DUPLICATION" "${METRICS}" | tail -1 | cut -f9)
-    if [[ -n "$dup_rate" ]]; then
+    # Extract duplication rate (skip header, get data row)
+    local dup_rate=$(awk -F'\t' 'BEGIN{col=0} $1=="LIBRARY"{for(i=1;i<=NF;i++) if($i=="PERCENT_DUPLICATION") col=i; next} /^#/ {next} col{print $col; exit}' "${METRICS}")
+    if [[ -n "$dup_rate" ]] && [[ "$dup_rate" != "PERCENT_DUPLICATION" ]]; then
         local dup_pct=$(awk "BEGIN {printf \"%.2f%%\", $dup_rate * 100}")
         log_metric "Duplication rate" "$dup_pct"
         log_qc "Duplication_Rate" "$dup_rate"
+    else
+        log_warn "Unable to extract duplication rate from metrics"
     fi
 }
 
@@ -472,7 +513,7 @@ step_complexity() {
     log_info "Computing NRF, PBC1, and PBC2 metrics"
     log_info "This may take several minutes for large libraries..."
     
-    local NSORT_BAM="${TMPDIR}/${SAMPLE}.name_sorted.bam"
+    local NSORT_BAM="${WORKDIR}/${SAMPLE}.name_sorted.bam"
     
     log_info "Sorting BAM by read name"
     samtools sort -n -@ "${THREADS}" -o "${NSORT_BAM}" "${MARKED_BAM}" \
@@ -527,7 +568,7 @@ step_complexity() {
 step_filter() {
     log_header "STEP 6: FILTERING & QC"
     
-    CLEAN_BAM="${FINALDIR}/${SAMPLE}.clean.bam"
+    CLEAN_BAM="${ALIGNDIR}/${SAMPLE}.clean.bam"
     
     log_info "Applying quality filters:"
     log_info "  - Remove unmapped, secondary, QC-fail, and duplicate reads"
@@ -569,17 +610,22 @@ step_filter() {
     local TOTAL_READS=$(samtools view -c -@ "${THREADS}" "${MARKED_BAM}")
     local FILTERED_READS=$(samtools view -c -@ "${THREADS}" "${CLEAN_BAM}")
     local REMOVED_READS=$((TOTAL_READS - FILTERED_READS))
-    local PCT_KEPT=$(awk "BEGIN {printf \"%.2f\", ($FILTERED_READS/$TOTAL_READS)*100}")
     
-    local H_TOTAL=$(format_reads "$TOTAL_READS")
-    local H_KEPT=$(format_reads "$FILTERED_READS")
-    local H_REMOVED=$(format_reads "$REMOVED_READS")
-    
-    log_metric "Reads retained" "${H_KEPT} / ${H_TOTAL} (${PCT_KEPT}%)"
-    log_metric "Reads removed" "${H_REMOVED}"
-    
-    log_qc "Reads_After_Filter" "$FILTERED_READS"
-    log_qc "Percent_Retained" "$PCT_KEPT"
+    if [[ "$TOTAL_READS" -gt 0 ]]; then
+        local PCT_KEPT=$(awk "BEGIN {printf \"%.2f\", ($FILTERED_READS/$TOTAL_READS)*100}")
+        
+        local H_TOTAL=$(format_reads "$TOTAL_READS")
+        local H_KEPT=$(format_reads "$FILTERED_READS")
+        local H_REMOVED=$(format_reads "$REMOVED_READS")
+        
+        log_metric "Reads retained" "${H_KEPT} / ${H_TOTAL} (${PCT_KEPT}%)"
+        log_metric "Reads removed" "${H_REMOVED}"
+        
+        log_qc "Reads_After_Filter" "$FILTERED_READS"
+        log_qc "Percent_Retained" "$PCT_KEPT"
+    else
+        log_warn "No reads found in marked BAM for filtering statistics"
+    fi
     
     log_info "Generating filtered BAM statistics"
     samtools flagstat -@ "${THREADS}" "${CLEAN_BAM}" > "${LOGDIR}/${SAMPLE}_clean_flagstat.txt"
@@ -646,28 +692,37 @@ step_peaks_seacr() {
     log_info "Generating bedgraph for SEACR"
     
     log_info "Converting BAM to BED fragments"
-    bedtools bamtobed -bedpe -i "${CLEAN_BAM}" \
+    # Sort by name first to ensure proper pairs are adjacent
+    samtools sort -n -@ "${THREADS}" -o "${WORKDIR}/${SAMPLE}.namesorted.bam" "${CLEAN_BAM}" \
+        2>> "${LOGDIR}/seacr.log" || fail "Name sorting failed"
+    
+    # Now convert to bedpe (suppress warnings to stderr, keep only errors in log)
+    bedtools bamtobed -bedpe -i "${WORKDIR}/${SAMPLE}.namesorted.bam" 2>&1 \
+    | grep -v "WARNING: Query.*is marked as paired" \
     | awk '$1==$4 && $6-$2 < 1000 {print $0}' \
     | cut -f 1,2,6 \
-    | sort -k1,1 -k2,2n -k3,3n > "${TMPDIR}/${SAMPLE}.fragments.bed" \
+    | sort -k1,1 -k2,2n -k3,3n > "${WORKDIR}/${SAMPLE}.fragments.bed" \
         2>> "${LOGDIR}/seacr.log" || fail "Fragment generation failed"
+    
+    # Clean up name-sorted BAM
+    rm -f "${WORKDIR}/${SAMPLE}.namesorted.bam"
     log_progress "Fragments generated"
     
     log_info "Extracting chromosome sizes"
     samtools view -H "${CLEAN_BAM}" \
     | grep "@SQ" \
-    | sed 's/@SQ\tSN:\|LN://g' > "${TMPDIR}/chrom.sizes" \
+    | sed 's/@SQ\tSN:\|LN://g' > "${WORKDIR}/chrom.sizes" \
         || fail "Chromosome size extraction failed"
     log_progress "Chromosome sizes extracted"
     
     log_info "Creating bedgraph coverage"
-    bedtools genomecov -bg -i "${TMPDIR}/${SAMPLE}.fragments.bed" \
-        -g "${TMPDIR}/chrom.sizes" > "${TMPDIR}/${SAMPLE}.bg" \
+    bedtools genomecov -bg -i "${WORKDIR}/${SAMPLE}.fragments.bed" \
+        -g "${WORKDIR}/chrom.sizes" > "${WORKDIR}/${SAMPLE}.bg" \
         2>> "${LOGDIR}/seacr.log" || fail "Bedgraph generation failed"
     log_progress "Bedgraph created"
     
     log_info "Running SEACR (stringent mode, top 1% threshold)"
-    SEACR_1.3.sh "${TMPDIR}/${SAMPLE}.bg" 0.01 non stringent \
+    SEACR_1.3.sh "${WORKDIR}/${SAMPLE}.bg" 0.01 non stringent \
         "${PEAKDIR}/${SAMPLE}_SEACR" \
         &>> "${LOGDIR}/seacr.log" || log_warn "SEACR peak calling failed"
     
@@ -749,11 +804,13 @@ step_insert_size() {
     
     log_progress "Insert size metrics generated"
     
-    # Extract median insert size
-    local median_insert=$(grep -A1 "MEDIAN_INSERT_SIZE" "${QCDIR}/${SAMPLE}_insert_size.txt" | tail -1 | cut -f1)
-    if [[ -n "$median_insert" ]]; then
+    # Extract median insert size (skip header lines, get first data row)
+    local median_insert=$(awk 'NR>7 && NF>0 && $1 ~ /^[0-9]+$/ {print $1; exit}' "${QCDIR}/${SAMPLE}_insert_size.txt")
+    if [[ -n "$median_insert" ]] && [[ "$median_insert" =~ ^[0-9]+$ ]]; then
         log_metric "Median insert size" "${median_insert}bp"
         log_qc "Median_Insert_Size" "$median_insert"
+    else
+        log_warn "Unable to extract median insert size from metrics"
     fi
 }
 
@@ -767,8 +824,8 @@ step_post_deeptools() {
         log_info "Increasing file descriptor limit for processing"
         ulimit -n 65536
         
-        SHIFTED_BAM="${TMPDIR}/${SAMPLE}.shifted.bam"
-        SHIFTED_SORT_BAM="${TMPDIR}/${SAMPLE}.shifted.sort.bam"
+        SHIFTED_BAM="${WORKDIR}/${SAMPLE}.shifted.bam"
+        SHIFTED_SORT_BAM="${WORKDIR}/${SAMPLE}.shifted.sort.bam"
         
         log_info "Running alignmentSieve with ATACshift"
         alignmentSieve --bam "${CLEAN_BAM}" --outFile "${SHIFTED_BAM}" \
@@ -793,7 +850,7 @@ step_post_deeptools() {
     
     log_info "Creating RPGC-normalized BigWig"
     bamCoverage --bam "${VIZ_BAM}" \
-        --outFileName "${FINALDIR}/${SAMPLE}.RPGC.bw" \
+        --outFileName "${TRACKDIR}/${SAMPLE}.RPGC.bw" \
         --binSize 10 \
         --normalizeUsing RPGC \
         --effectiveGenomeSize "${EFFECTIVE_GENOME_SIZE}" \
@@ -803,7 +860,7 @@ step_post_deeptools() {
     
     log_info "Creating CPM-normalized BigWig"
     bamCoverage --bam "${VIZ_BAM}" \
-        --outFileName "${FINALDIR}/${SAMPLE}.CPM.bw" \
+        --outFileName "${TRACKDIR}/${SAMPLE}.CPM.bw" \
         --binSize 10 \
         --normalizeUsing CPM \
         --effectiveGenomeSize "${EFFECTIVE_GENOME_SIZE}" \
@@ -854,8 +911,8 @@ step_cleanup() {
     log_header "CLEANUP"
     
     log_info "Removing intermediate files"
-    local tmp_size=$(du -sh "${TMPDIR}" | cut -f1)
-    rm -rf "${TMPDIR}" || log_warn "Failed to remove tmp directory"
+    local tmp_size=$(du -sh "${WORKDIR}" 2>/dev/null | cut -f1 || echo "unknown")
+    rm -rf "${WORKDIR}" || log_warn "Failed to remove working directory"
     log_progress "Freed ${tmp_size} of disk space"
 }
 
@@ -919,9 +976,13 @@ step_cleanup
 log_header "PIPELINE COMPLETE"
 log_info "Sample: ${SAMPLE}"
 log_info "Output directory: ${OUTDIR}"
-log_info "Final BAM: ${FINALDIR}/${SAMPLE}.clean.bam"
-log_info "Peaks: ${PEAKDIR}/"
-log_info "QC summary: ${SUMMARY_QC}"
+echo
+log_info "Key outputs:"
+log_info "  • Final BAM: ${ALIGNDIR}/${SAMPLE}.clean.bam"
+log_info "  • Peaks: ${PEAKDIR}/"
+log_info "  • Tracks: ${TRACKDIR}/"
+log_info "  • QC summary: ${SUMMARY_QC}"
+log_info "  • MultiQC report: ${OUTDIR}/multiqc/"
 log_elapsed
 
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
