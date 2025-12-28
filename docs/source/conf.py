@@ -50,5 +50,5 @@ html_context = {
   'display_github': True,
   'github_user': 'zqzneptune',
   'github_repo': 'epi-flow',
-  'github_version': 'docs/source/',
+  'github_version': 'main/docs/source/',
 }
