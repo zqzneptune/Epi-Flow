@@ -2,7 +2,9 @@
 set -euo pipefail
 trap 'log_error "Pipeline failed at line $LINENO"; exit 1' ERR
 
-
+# ==============================================================================
+# VISUALIZATION & CONFIGURATION DEFAULTS
+# ==============================================================================
 if [[ -t 1 ]] && command -v tput &>/dev/null && [[ $(tput colors 2>/dev/null) -ge 8 ]]; then
     readonly RED='\033[0;31m'
     readonly GREEN='\033[0;32m'
@@ -22,7 +24,6 @@ else
     readonly NC=''
 fi
 
-
 THREADS=8
 MEM_GB=""
 CLEAN_INTERMEDIATE=true
@@ -31,9 +32,11 @@ EFFECTIVE_GENOME_SIZE=""
 PEAK_MODE="narrow"
 ASSAY_TYPE=""
 
-
 PIPELINE_START_TIME=$(date +%s)
 
+# ==============================================================================
+# LOGGING & HELPER FUNCTIONS
+# ==============================================================================
 log_header() {
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${BLUE}  $1${NC}"
@@ -147,7 +150,9 @@ usage() {
     exit 1
 }
 
-
+# ==============================================================================
+# ARGUMENT PARSING
+# ==============================================================================
 R1_INPUT=""
 R2_INPUT=""
 SAMPLE=""
@@ -174,7 +179,9 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-
+# ==============================================================================
+# VALIDATION & ENVIRONMENT SETUP
+# ==============================================================================
 log_header "VALIDATION & SETUP"
 
 if [[ -z "${R1_INPUT}" || -z "${SAMPLE}" || -z "${BOWTIE2_INDEX}" || -z "${OUTDIR}" || -z "${EFFECTIVE_GENOME_SIZE}" || -z "${ASSAY_TYPE}" ]]; then
@@ -309,7 +316,11 @@ if [[ -n "${BLACKLIST}" ]]; then
     log_progress "Blacklist: ${BLACKLIST}"
 fi
 
+# ==============================================================================
+# PIPELINE STEP FUNCTIONS
+# ==============================================================================
 
+# --- Step 1: Quality Control (FastQC) & File Merging ---
 step_prepare() {
     log_header "STEP 1: PRE-QC AND MERGING"
     
@@ -334,6 +345,7 @@ step_prepare() {
     fi
 }
 
+# --- Step 2: Adapter Trimming (Cutadapt) ---
 step_trim() {
     log_header "STEP 2: ADAPTER TRIMMING"
     
@@ -369,6 +381,7 @@ step_trim() {
     fi
 }
 
+# --- Step 3: Alignment (Bowtie2) ---
 step_align() {
     log_header "STEP 3: ALIGNMENT"
     
@@ -467,6 +480,7 @@ step_align() {
     fi
 }
 
+# --- Step 4: Duplicate Marking (Picard) ---
 step_mark_dups() {
     log_header "STEP 4: DUPLICATE MARKING"
     
@@ -505,6 +519,7 @@ step_mark_dups() {
     fi
 }
 
+# --- Step 5: Library Complexity (NRF/PBC Stats) ---
 step_complexity() {
     log_header "STEP 5: LIBRARY COMPLEXITY ANALYSIS"
     
@@ -563,6 +578,7 @@ step_complexity() {
     rm -f "${NSORT_BAM}"
 }
 
+# --- Step 6: BAM Filtering (Remove Mito/Unmapped/LowQ) ---
 step_filter() {
     log_header "STEP 6: FILTERING & QC"
     
@@ -632,6 +648,7 @@ step_filter() {
     log_progress "Statistics generated"
 }
 
+# --- Step 7: Peak Calling (MACS3) ---
 step_peaks_macs() {
     log_header "STEP 7: PEAK CALLING (MACS3)"
     
@@ -684,6 +701,7 @@ step_peaks_macs() {
     fi
 }
 
+# --- Specialized Peak Calling (SEACR) for CUT&RUN/Tag ---
 step_peaks_seacr() {
     log_header "PEAK CALLING (SEACR)"
     
@@ -734,6 +752,7 @@ step_peaks_seacr() {
     fi
 }
 
+# --- FRiP Score Calculation (Fraction of Reads in Peaks) ---
 step_frip() {
     local peak_file="$1"
     local label="$2"
@@ -783,6 +802,7 @@ step_frip() {
     fi
 }
 
+# --- Insert Size Distribution (Picard) ---
 step_insert_size() {
     if [[ "$IS_PE" != "true" ]]; then
         log_info "Skipping insert size (single-end data)"
@@ -812,6 +832,7 @@ step_insert_size() {
     fi
 }
 
+# --- Step 8: Visualization Tracks (BigWig) & Tn5 Shift ---
 step_post_deeptools() {
     log_header "STEP 8: SIGNAL TRACKS & DEEPTOOLS"
     
@@ -881,6 +902,7 @@ step_post_deeptools() {
     fi
 }
 
+# --- Final Reporting (MultiQC) ---
 step_multiqc() {
     log_header "GENERATING QC REPORT"
     
@@ -900,6 +922,7 @@ step_multiqc() {
     fi
 }
 
+# --- Cleanup Temporary Files ---
 step_cleanup() {
     if [[ "$CLEAN_INTERMEDIATE" != "true" ]]; then
         log_info "Keeping intermediate files (--keep-tmp specified)"
@@ -915,6 +938,9 @@ step_cleanup() {
 }
 
 
+# ==============================================================================
+# MAIN EXECUTION FLOW
+# ==============================================================================
 log_header "EPI-FLOW PIPELINE START"
 log_info "Sample: ${SAMPLE}"
 log_info "Assay: ${ASSAY_TYPE^^}"
