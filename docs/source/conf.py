@@ -1,7 +1,4 @@
-# Configuration file for the Sphinx documentation builder.
-#
-# For the full list of built-in configuration values, see the documentation:
-# https://www.sphinx-doc.org/en/master/usage/configuration.html
+# ./docs/source/conf.py
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
@@ -14,27 +11,13 @@ release = '1.0.0'
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
-
+# Remove the old theme from the extensions list
+extensions = [
+    'myst_parser',      # Enable Markdown support
+]
 
 templates_path = ['_templates']
 exclude_patterns = []
-
-
-
-# -- Options for HTML output -------------------------------------------------
-# https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
-
-html_theme = 'alabaster'
-html_static_path = ['_static']
-
-import os
-import sys
-
-# -- General configuration ---------------------------------------------------
-extensions = [
-    'myst_parser',      # Enable Markdown support
-    'sphinx_rtd_theme', # Enable the theme
-]
 
 source_suffix = {
     '.rst': 'restructuredtext',
@@ -43,12 +26,30 @@ source_suffix = {
 }
 
 # -- Options for HTML output -------------------------------------------------
-html_theme = 'sphinx_rtd_theme'
+# https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-# Add the "Edit on GitHub" link (optional, adjust to your repo)
-html_context = {
-  'display_github': True,
-  'github_user': 'zqzneptune',
-  'github_repo': 'epi-flow',
-  'github_version': 'main/docs/source/',
+# Set the theme to Furo
+html_theme = 'furo'
+# html_static_path = ['_static']
+
+# (Optional) Add a logo. Create a `_static` folder in `source` and add your logo.
+# html_logo = "_static/logo.png"
+
+# (Optional) Furo theme options
+html_theme_options = {
+    "light_css_variables": {
+        "color-brand-primary": "#007acc",    # A nice blue color
+        "color-brand-content": "#007acc",
+    },
+    "dark_css_variables": {
+        "color-brand-primary": "#1a9fff",     # A lighter blue for dark mode
+        "color-brand-content": "#1a9fff",
+    },
+    # Add your GitHub link to the sidebar
+    "source_repository": "https://github.com/zqzneptune/epi-flow/",
+    "source_branch": "main",
+    "source_directory": "docs/source/",
 }
+
+# Remove the old html_context for the GitHub link, as Furo handles this better
+# via html_theme_options.
