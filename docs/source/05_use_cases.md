@@ -65,7 +65,8 @@ This section translates common biological experiments into ready-to-use Epi-Flow
 
 **Goal:** To identify genomic regions decorated with the repressive histone mark H3K27me3 in mouse embryonic stem cells (mESCs). The data is single-end.
 
-**The Command:**```bash
+**The Command:**
+```bash
 ./epi_flow.sh \
     -a chip \
     -n mESC_H3K27me3_Rep1 \
