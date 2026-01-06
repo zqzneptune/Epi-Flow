@@ -53,3 +53,12 @@ html_theme_options = {
 
 # Remove the old html_context for the GitHub link, as Furo handles this better
 # via html_theme_options.
+html_sidebars = {
+    "**": [
+        "sidebar/brand.html",         # Renders the logo/title
+        "sidebar/search.html",        # Renders the search bar
+        "sidebar/navigation.html",    # Renders the main toctree
+        "sidebar-links.html",         # Renders our custom links file
+        "sidebar/ethical-ads.html",   # Renders Furo's ethical ads (optional)
+    ]
+}
