@@ -36,7 +36,7 @@ chmod +x epi_flow.sh
 
 **All installation instructions, tutorials, and parameter guides have been moved to our dedicated documentation site.** This is the best place to start.
 
-### ➡️ [**Read the Full Documentation at zqzneptune.github.io/Epi-Flow/**](https://zqzneptune.github.io/Epi-Flow/)
+### ➡️ [Read the Full Documentation](https://zqzneptune.github.io/Epi-Flow/)
 
 ---
 
