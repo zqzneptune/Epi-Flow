@@ -44,6 +44,111 @@ After the command finishes (which can take an hour for a human genome), your dir
 >
 > Create a dedicated directory on your system (e.g., `/data/genomes/`) to store all reference files. Within it, create a folder for each genome assembly (`hg38`, `mm10`, etc.). This keeps your indices, annotations, and blacklists neatly organized and easy to find for all your future projects.
 
+### Command-Line Quick Start: Genome Indexing
+
+Below are self-contained command blocks to download a reference genome from UCSC, build the Bowtie2 index, and clean up the downloaded files.
+
+**Prerequisites:** You must have `wget` and `bowtie2` installed and available in your `PATH`.
+
+Simply copy the entire block for your desired organism and paste it into your terminal. The indexing process can take a significant amount of time (over an hour for human/mouse) and memory.
+
+---
+
+#### Human (hg38)
+
+This will download the hg38 reference genome, build the Bowtie2 index with the prefix `hg38`, and then remove the large FASTA file to save space.
+
+```bash
+# --- Human (hg38) ---
+echo "Downloading hg38 reference genome from UCSC..."
+wget -c -O hg38.fa.gz https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz && \
+echo "Decompressing..." && \
+gunzip hg38.fa.gz && \
+echo "Building Bowtie2 index (this will take a while)..." && \
+bowtie2-build hg38.fa hg38 && \
+echo "Cleaning up large FASTA file..." && \
+rm hg38.fa && \
+echo "Done. Bowtie2 index 'hg38' is ready in the current folder."
+```
+
+---
+
+#### Mouse (mm10)
+
+This will download the mm10 reference genome, build the Bowtie2 index with the prefix `mm10`, and clean up.
+
+```bash
+# --- Mouse (mm10) ---
+echo "Downloading mm10 reference genome from UCSC..."
+wget -c -O mm10.fa.gz https://hgdownload.soe.ucsc.edu/goldenPath/mm10/bigZips/mm10.fa.gz && \
+echo "Decompressing..." && \
+gunzip mm10.fa.gz && \
+echo "Building Bowtie2 index (this will take a while)..." && \
+bowtie2-build mm10.fa mm10 && \
+echo "Cleaning up large FASTA file..." && \
+rm mm10.fa && \
+echo "Done. Bowtie2 index 'mm10' is ready in the current folder."
+```
+
+---
+
+#### Rat (rn7)
+
+This will download the rn7 reference genome, build the Bowtie2 index with the prefix `rn7`, and clean up.
+
+```bash
+# --- Rat (rn7) ---
+echo "Downloading rn7 reference genome from UCSC..."
+wget -c -O rn7.fa.gz https://hgdownload.soe.ucsc.edu/goldenPath/rn7/bigZips/rn7.fa.gz && \
+echo "Decompressing..." && \
+gunzip rn7.fa.gz && \
+echo "Building Bowtie2 index..." && \
+bowtie2-build rn7.fa rn7 && \
+echo "Cleaning up large FASTA file..." && \
+rm rn7.fa && \
+echo "Done. Bowtie2 index 'rn7' is ready in the current folder."
+```
+
+---
+
+#### Zebrafish (danRer11)
+
+This will download the danRer11 reference genome, build the Bowtie2 index with the prefix `danRer11`, and clean up.
+
+```bash
+# --- Zebrafish (danRer11) ---
+echo "Downloading danRer11 reference genome from UCSC..."
+wget -c -O danRer11.fa.gz https://hgdownload.soe.ucsc.edu/goldenPath/danRer11/bigZips/danRer11.fa.gz && \
+echo "Decompressing..." && \
+gunzip danRer11.fa.gz && \
+echo "Building Bowtie2 index..." && \
+bowtie2-build danRer11.fa danRer11 && \
+echo "Cleaning up large FASTA file..." && \
+rm danRer11.fa && \
+echo "Done. Bowtie2 index 'danRer11' is ready in the current folder."```
+```
+
+---
+
+#### Fruit Fly (dm6)
+
+This will download the dm6 reference genome, build the Bowtie2 index with the prefix `dm6`, and clean up.
+
+```bash
+# --- Fruit Fly (dm6) ---
+echo "Downloading dm6 reference genome from UCSC..."
+wget -c -O dm6.fa.gz https://hgdownload.soe.ucsc.edu/goldenPath/dm6/bigZips/dm6.fa.gz && \
+echo "Decompressing..." && \
+gunzip dm6.fa.gz && \
+echo "Building Bowtie2 index..." && \
+bowtie2-build dm6.fa dm6 && \
+echo "Cleaning up large FASTA file..." && \
+rm dm6.fa && \
+echo "Done. Bowtie2 index 'dm6' is ready in the current folder."
+```
+
+After running one of these blocks, the output prefix (`hg38`, `mm10`, etc.) in your current directory is what you should provide to the `-x` flag when running Epi-Flow.
+
 ---
 
 ## 2. Effective Genome Size (`-g`)
@@ -55,9 +160,7 @@ For common organisms, you can use these pre-calculated values:
 | Genome Assembly | Shorthand | Effective Size (Integer for `-g`) |
 | :--- | :--- | :--- |
 | Human (GRCh38 / hg38) | `hs` | `2913022398` |
-| Human (GRCh37 / hg19) | `hs` | `2700000000` |
 | Mouse (GRCm38 / mm10) | `mm` | `2652783500` |
-| Mouse (GRCm39 / mm39) | `mm` | `2652783500` |
 | C. elegans (ce10) | `ce` | `97985443` |
 | D. melanogaster (dm6) | `dm` | `142573017` |
 
